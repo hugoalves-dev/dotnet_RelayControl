@@ -225,3 +225,4 @@ flowchart TD
 - [ADR 0005: Symmetric device credentials with a parallel DeviceBearer scheme](adr/0005-device-identity-credentials.md) — extended in Phase 2 to sessions, signaling and TURN credential issuance
 - [ADR 0006: Remove ASP.NET Core Identity and owner-scoped Device CRUD](adr/0006-remove-identity.md)
 - [ADR 0007: Model bidirectional audio as a session mode with backend-owned publish permission](adr/0007-duplex-audio-sessions.md)
+- [ADR 0009: LAN signaling between SonicRelay clients without RelayControl](adr/0009-lan-offline-signaling.md) — protocol: [LAN signaling v1](protocol/lan-signaling-v1.md)
