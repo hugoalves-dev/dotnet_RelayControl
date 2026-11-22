@@ -14,7 +14,8 @@ public sealed class LaunchIntentService(
     ISessionCodeStore sessionCodeStore,
     IConfiguration configuration,
     IOptions<LaunchIntentOptions> options,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider,
+    LaunchIntentEventBroadcaster events)
 {
     private readonly LaunchIntentOptions _options = options.Value;
 
@@ -101,6 +102,8 @@ public sealed class LaunchIntentService(
         {
             throw new LaunchIntentException("intent_session_mismatch");
         }
+        // Only reached once the Ready transition has committed; idempotent retries return above.
+        events.Publish(LaunchIntentEventTypes.SessionReady, intent.Id);
     }
 
     public async Task<IReadOnlyList<ShareLaunchIntent>> ListRecoverableAsync(CancellationToken ct) =>

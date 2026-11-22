@@ -12,6 +12,7 @@ All bot operations use `Authorization: Bearer <RelayLaunch:ServiceToken>`:
 |---|---|---|
 | POST /api/launch-intents/share | `{provider:"discord",guildId,channelId,requestedByUserId,ttlSeconds}` | `{id,launchUrl,expiresAt}` |
 | GET /api/launch-intents/pending | none | `[{id,guildId,channelId,requestedByUserId,status,expiresAt}]` |
+| GET /api/launch-intents/events | `Accept: text/event-stream` | SSE stream, see below |
 | GET /api/launch-intents/{id} | `watchTtlSeconds` optional | `{id,status,sessionId,watchLaunchUrl,expiresAt}` |
 | POST /api/launch-intents/{id}/published | `{messageId?}` | 204 |
 | POST /api/launch-intents/watch | `{code,ttlSeconds}` | `{launchUrl,expiresAt}` |
@@ -28,6 +29,45 @@ The bot uses zero during polling because a public ready announcement cannot shar
 single-use capability among participants. Each participant runs `/framerelay watch <code>`
 to obtain an individual Activity intent and individual desktop fallback, so status polling
 does not create unused credentials.
+
+## Bot event stream (SSE)
+
+`GET /api/launch-intents/events` replaces steady-state polling of `/pending`. It uses the same
+`launch-intents:bot` policy and service bearer; anonymous, wrong-token and device callers get
+401/403. It never reuses `/ws/signaling`. Frames (`text/event-stream`, `Cache-Control: no-cache`):
+
+| event | data | when |
+|---|---|---|
+| `connected` | `{}` (plus `retry: 5000`) | first frame, sent after the subscription is registered |
+| `session_ready` | `{"intentId":"<guid>"}` with `id: <sequence>` | after the `Ready` transition has committed |
+| `heartbeat` | `{}` | every `LaunchIntents:EventsHeartbeatSeconds` (default 20s) while idle |
+
+Payloads carry no watch URLs, tokens or Discord ids; fetch details with `GET /{id}` and acknowledge
+with `POST /{id}/published` as before. Idempotent completion retries and rejected writes emit
+nothing. Clients must ignore unknown event types.
+
+**Race-safe bootstrap.** On every (re)connect: wait for `connected`, then call `GET /pending` once
+and process its ready, unpublished intents. Anything committed before `connected` is in that
+snapshot; anything after it arrives on the stream. Duplicates are possible, so handling must be
+idempotent on `intentId`. `id` sequences are per process and `Last-Event-ID` is not honoured;
+reconciliation through `/pending` (backed by PostgreSQL status and `PublishedAt`) is the recovery
+path across API restarts and disconnects.
+
+**Bounded resources.** Each subscriber has a 64-event buffer; a subscriber that falls behind is
+disconnected (stream ends) rather than silently losing events, and recovers by reconnecting.
+At most `LaunchIntents:EventsMaxSubscribers` (default 8) streams per instance; extra connections
+get 503 `too_many_subscribers`. Heartbeats keep Cloudflare Tunnel (≈100s idle limit) and other
+proxies from closing idle streams; any proxy must not buffer the response (`X-Accel-Buffering: no`
+is sent).
+
+**Single instance.** The broadcaster is in-memory. With more than one API replica, a bot connected
+to replica A misses events committed on replica B until it reconciles. Before scaling out, add a
+backplane (e.g. PostgreSQL `LISTEN/NOTIFY`) or have the bot reconcile `/pending` periodically.
+
+**Rollout.** Deploy this API first; `/pending` and all other routes are unchanged, so the current
+polling bot keeps working. Then enable SSE in the bot (go_discord_FrameRelay#15), which falls back
+to low-frequency polling only when `/events` returns 404. Confirm in Cloudflare Analytics that
+`/api/launch-intents/pending` traffic drops from the ~86k/day baseline.
 
 Public URLs are `/open/launch#<token>`: the fragment is absent from HTTP access logs. The landing
 page clears it from history and opens `framerelay://launch?token=<token>`, and shows the configured
