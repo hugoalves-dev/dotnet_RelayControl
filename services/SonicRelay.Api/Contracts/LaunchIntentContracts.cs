@@ -1,7 +1,7 @@
 namespace SonicRelay.Api.Contracts;
 
 public sealed record CreateShareLaunchIntentRequest(
-    string Provider, string GuildId, string ChannelId, string RequestedByUserId, int? TtlSeconds = null);
+    string Provider, string? GuildId, string ChannelId, string RequestedByUserId, int? TtlSeconds = null);
 
 public sealed record CreateShareLaunchIntentResponse(Guid Id, string LaunchUrl, DateTimeOffset ExpiresAt);
 public sealed record ConsumeShareLaunchIntentRequest(string Token);
