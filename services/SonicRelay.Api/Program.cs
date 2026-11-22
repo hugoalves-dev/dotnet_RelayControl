@@ -136,6 +136,7 @@ builder.Services.AddHttpClient<IDiscordActivityValidator, DiscordActivityValidat
 builder.Services.AddHttpClient("DiscordActivityInstances", client => client.Timeout = TimeSpan.FromSeconds(10));
 builder.Services.AddSingleton<DiscordActivityInstanceCache>();
 builder.Services.AddSingleton<DeviceCredentialService>();
+builder.Services.AddSingleton<LaunchIntentEventBroadcaster>();
 builder.Services.AddScoped<LaunchIntentService>();
 builder.Services.AddScoped<MediaRelayGrantService>();
 builder.Services.AddSingleton<SignalingGrantService>();
