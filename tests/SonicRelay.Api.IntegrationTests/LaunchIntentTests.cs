@@ -110,6 +110,67 @@ public sealed class LaunchIntentTests
             ready.GetProperty("watchLaunchUrl").GetString(), StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData("")]
+    [InlineData(null)]
+    public async Task Private_channel_share_without_guild_issues_watch_links_only_for_that_channel(string? guildId)
+    {
+        using var factory = new SonicRelayApiFactory();
+        using var bot = factory.CreateClient();
+        bot.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer", "integration-test-discord-service-token");
+        var createdIntent = await bot.PostAsJsonAsync("/api/launch-intents/share", new
+        {
+            provider = "discord", guildId, channelId = "22", requestedByUserId = "33"
+        });
+        Assert.Equal(HttpStatusCode.Created, createdIntent.StatusCode);
+        var launch = await createdIntent.Content.ReadFromJsonAsync<JsonElement>();
+        var intentId = launch.GetProperty("id").GetGuid();
+        var token = launch.GetProperty("launchUrl").GetString()![("https://framerelay.hugojava.dev/open/share/".Length)..];
+
+        var pending = await bot.GetFromJsonAsync<JsonElement>("/api/launch-intents/pending");
+        Assert.Equal(string.Empty, pending.EnumerateArray().Single().GetProperty("guildId").GetString());
+
+        using var publisher = factory.CreateClient();
+        await DeviceIdentityTestHelper.BootstrapAndAuthorizeAsync(
+            publisher, DeviceTypes.WindowsPublisher, DevicePlatforms.Windows);
+        (await publisher.PostAsJsonAsync("/api/launch-intents/share/consume", new { token })).EnsureSuccessStatusCode();
+        var sessionResponse = await publisher.PostAsJsonAsync("/api/sessions", new { maxViewers = 3, mode = "screen_share" });
+        var session = await sessionResponse.Content.ReadFromJsonAsync<JsonElement>();
+        (await publisher.PostAsJsonAsync($"/api/launch-intents/share/{intentId}/complete",
+            new { sessionId = session.GetProperty("id").GetGuid() })).EnsureSuccessStatusCode();
+
+        var watch = await bot.PostAsJsonAsync($"/api/launch-intents/{intentId}/watch",
+            new { guildId, channelId = "22", requestedByUserId = "44", ttlSeconds = 120 });
+        Assert.Equal(HttpStatusCode.OK, watch.StatusCode);
+        var personal = await watch.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.StartsWith("https://framerelay.hugojava.dev/open/watch/",
+            personal.GetProperty("launchUrl").GetString(), StringComparison.Ordinal);
+
+        Assert.Equal(HttpStatusCode.NotFound, (await bot.PostAsJsonAsync($"/api/launch-intents/{intentId}/watch",
+            new { guildId, channelId = "23", requestedByUserId = "44" })).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await bot.PostAsJsonAsync($"/api/launch-intents/{intentId}/watch",
+            new { guildId = "1", channelId = "22", requestedByUserId = "44" })).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await bot.PostAsJsonAsync($"/api/launch-intents/{intentId}/watch",
+            new { guildId = "", channelId = "", requestedByUserId = "44" })).StatusCode);
+    }
+
+    [Fact]
+    public async Task Share_intent_without_channel_is_rejected()
+    {
+        using var factory = new SonicRelayApiFactory();
+        using var bot = factory.CreateClient();
+        bot.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer", "integration-test-discord-service-token");
+
+        var response = await bot.PostAsJsonAsync("/api/launch-intents/share", new
+        {
+            provider = "discord", guildId = "", channelId = "", requestedByUserId = "33"
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
     [Fact]
     public async Task Viewer_resolves_watch_capability_with_join_scope_only()
     {

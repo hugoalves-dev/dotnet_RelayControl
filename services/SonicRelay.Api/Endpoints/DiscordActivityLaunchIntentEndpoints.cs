@@ -66,7 +66,10 @@ public static class DiscordActivityLaunchIntentEndpoints
         bot.MapPost("/{intentId:guid}/watch", async (Guid intentId, ReadyActivityRequest request,
             LaunchIntentService service, IOptions<LaunchIntentOptions> options, CancellationToken ct) =>
         {
-            if (!ValidContext(request.GuildId, request.ChannelId, request.RequestedByUserId)) return Results.BadRequest();
+            // DMs and Group DMs have no guild; the stored intent's channel still binds the watch link.
+            if (!ValidContext(request.ChannelId, request.RequestedByUserId)
+                || (!string.IsNullOrEmpty(request.GuildId) && !ValidContext(request.GuildId)))
+                return Results.BadRequest();
             try
             {
                 var (token, expiresAt) = await service.CreateWatchCapabilityForReadyIntentAsync(

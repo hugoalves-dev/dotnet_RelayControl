@@ -20,11 +20,13 @@ public sealed class LaunchIntentService(
     private readonly LaunchIntentOptions _options = options.Value;
 
     public async Task<(ShareLaunchIntent Intent, string LaunchUrl)> CreateShareAsync(
-        string provider, string guildId, string channelId, string requestedByUserId, int? ttlSeconds,
+        string provider, string? guildId, string channelId, string requestedByUserId, int? ttlSeconds,
         CancellationToken ct)
     {
+        // DMs and Group DMs have no guild; the channel alone scopes the share.
+        guildId ??= string.Empty;
         if (!string.Equals(provider, "discord", StringComparison.OrdinalIgnoreCase)
-            || string.IsNullOrWhiteSpace(guildId) || string.IsNullOrWhiteSpace(channelId)
+            || (guildId.Length > 0 && string.IsNullOrWhiteSpace(guildId)) || string.IsNullOrWhiteSpace(channelId)
             || string.IsNullOrWhiteSpace(requestedByUserId)
             || guildId.Length > 64 || channelId.Length > 64 || requestedByUserId.Length > 64)
             throw new LaunchIntentException("invalid_request");
@@ -170,8 +172,9 @@ public sealed class LaunchIntentService(
     }
 
     public async Task<(string Token, DateTimeOffset ExpiresAt)> CreateWatchCapabilityForReadyIntentAsync(
-        Guid intentId, string guildId, string channelId, int? ttlSeconds, CancellationToken ct)
+        Guid intentId, string? guildId, string channelId, int? ttlSeconds, CancellationToken ct)
     {
+        guildId ??= string.Empty;
         var intent = await db.ShareLaunchIntents.AsNoTracking().SingleOrDefaultAsync(x => x.Id == intentId, ct);
         if (intent?.Status != ShareLaunchIntentStatuses.Ready || intent.SessionId is not { } sessionId
             || intent.GuildId != guildId || intent.ChannelId != channelId)
